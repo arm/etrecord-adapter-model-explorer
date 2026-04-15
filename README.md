@@ -1,0 +1,1 @@
+# etrecord-adapter-model-explorer
