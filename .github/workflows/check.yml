@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Install qlty
-        uses: qltysh/qlty-action/install@a2277a908db90c4c868832fb9204521fb940fdb4 # v1.2.0
+        uses: qltysh/qlty-action/install@a19242102d17e497f437d7466aa01b528537e899 # v1.2.0
       - name: Check lint
         run: |
           qlty check

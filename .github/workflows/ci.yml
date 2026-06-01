@@ -60,7 +60,7 @@ jobs:
 
       - name: Upload coverage to Qlty
         if: matrix.runner == env.DEFAULT_OS && matrix.python-version == env.DEFAULT_PY_VERSION
-        uses: qltysh/qlty-action/coverage@9e8e09dfc3d82a968f4034f5265eaf3c142881f7 # v2.0.0
+        uses: qltysh/qlty-action/coverage@a19242102d17e497f437d7466aa01b528537e899 # v2.2.0
         with:
           token: ${{ secrets.QLTY_COVERAGE_TOKEN }}
           files: reports/lcov.info
