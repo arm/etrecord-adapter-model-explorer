@@ -48,7 +48,7 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
 
       - name: Install Qlty
-        uses: qltysh/qlty-action/install@a2277a908db90c4c868832fb9204521fb940fdb4 # v1.2.0
+        uses: qltysh/qlty-action/install@fd52dc852530a708d68c3b7342f8d33d1df4cd55 # v1.2.0
 
       - name: Run Qlty
         run: |
