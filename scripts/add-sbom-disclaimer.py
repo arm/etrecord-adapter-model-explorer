@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Add Arm creator metadata and disclaimer text to an SPDX JSON SBOM."""
+"""Add Arm creator metadata and disclaimer text to an SBOM JSON file."""
 
 import argparse
 import json
@@ -26,14 +26,13 @@ SBOM_DISCLAIMER = (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Add Arm SBOM disclaimer metadata to SPDX JSON"
+        description="Add Arm SBOM disclaimer metadata to SPDX or CycloneDX JSON"
     )
-    parser.add_argument("sbom", type=Path, help="Path to SPDX JSON SBOM")
+    parser.add_argument("sbom", type=Path, help="Path to SBOM JSON file")
     return parser.parse_args()
 
 
-def add_disclaimer(sbom: Path) -> None:
-    data = json.loads(sbom.read_text(encoding="utf-8"))
+def add_spdx_disclaimer(data: dict) -> None:
     creation_info = data.setdefault("creationInfo", {})
 
     creators = creation_info.setdefault("creators", [])
@@ -48,6 +47,35 @@ def add_disclaimer(sbom: Path) -> None:
         comment = existing_comment
 
     creation_info["comment"] = comment
+
+
+def upsert_cyclonedx_property(properties: list, name: str, value: str) -> None:
+    for prop in properties:
+        if prop.get("name") == name:
+            prop["value"] = value
+            return
+    properties.append({"name": name, "value": value})
+
+
+def add_cyclonedx_disclaimer(data: dict) -> None:
+    metadata = data.setdefault("metadata", {})
+    properties = metadata.setdefault("properties", [])
+    upsert_cyclonedx_property(properties, "arm:sbom:creator", ARM_CREATOR)
+    upsert_cyclonedx_property(
+        properties, "arm:sbom:disclaimer", SBOM_DISCLAIMER
+    )
+
+
+def add_disclaimer(sbom: Path) -> None:
+    data = json.loads(sbom.read_text(encoding="utf-8"))
+
+    if "spdxVersion" in data or "creationInfo" in data:
+        add_spdx_disclaimer(data)
+    elif data.get("bomFormat") == "CycloneDX":
+        add_cyclonedx_disclaimer(data)
+    else:
+        raise ValueError(f"Unsupported SBOM format: {sbom}")
+
     sbom.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 

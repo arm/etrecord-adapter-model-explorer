@@ -80,28 +80,31 @@ jobs:
           python-version: ${{ env.DEFAULT_PY_VERSION }}
           internal-dev-version: ${{ inputs['internal-dev-version'] }}
 
-      - name: Create project SBOM output directory
+      - name: Create wheel SBOM output directory
         run: mkdir -p sbom
 
-      - name: Generate project SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
-        with:
-          path: .
-          format: spdx-json
-          output-file: sbom/etrecord-adapter-model-explorer-source.spdx.json
-          upload-artifact: false
-          upload-release-assets: false
+      - name: Generate wheel SBOM
+        env:
+          PIP_INDEX_URL: https://pypi.org/simple
+        run: |
+          python -m pip install --index-url https://pypi.org/simple cyclonedx-bom==7.3.0
+          python -m venv .sbom-venv
+          .sbom-venv/bin/python -m pip install --upgrade pip
+          .sbom-venv/bin/python -m pip install dist/*.whl
+          python -m cyclonedx_py environment .sbom-venv/bin/python \
+            --output-format JSON \
+            --output-file sbom/etrecord-adapter-model-explorer-wheel.cdx.json
 
       - name: Add SBOM disclaimer
         run: |
           python scripts/add-sbom-disclaimer.py \
-            sbom/etrecord-adapter-model-explorer-source.spdx.json
+            sbom/etrecord-adapter-model-explorer-wheel.cdx.json
 
-      - name: Upload project SBOM artifact
+      - name: Upload wheel SBOM artifact
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: project-sbom
-          path: sbom/*.spdx.json
+          path: sbom/*.json
           if-no-files-found: error
 
   publish-internal-pypi:
