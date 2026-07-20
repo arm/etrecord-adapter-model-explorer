@@ -162,7 +162,7 @@ jobs:
           path: dist/
 
       - name: Publish distribution to PyPI
-        uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # release/v1.12.4
+        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # release/v1.14.1
 
       - name: Download project SBOM
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -201,7 +201,7 @@ jobs:
           path: dist/
 
       - name: Publish distribution to internal PyPI
-        uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # release/v1.12.4
+        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # release/v1.14.1
         with:
           repository-url: ${{ vars.INTERNAL_PYPI_UPLOAD_URL }}
           user: ${{ secrets.INTERNAL_PYPI_USERNAME }}
