@@ -35,7 +35,7 @@ jobs:
           git config --global user.email "1736931+model-explorer-plugins-repo-access[bot]@users.noreply.github.com"
           git config --global user.name "model-explorer-plugins-repo-access[bot]"
       - name: Calculate new version
-        uses: orhun/git-cliff-action@d77b37db2e3f7398432d34b72a12aa3e2ba87e51 # v4.6.0
+        uses: orhun/git-cliff-action@3d96a18cc4ec17e9dc69ddcc424ccafaf1f78ce2 # v4.9.0
         id: git-cliff
         with:
           config: cliff.toml
