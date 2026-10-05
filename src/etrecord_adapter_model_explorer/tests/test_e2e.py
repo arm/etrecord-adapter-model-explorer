@@ -235,11 +235,107 @@ def test_concurrent_etrecord_loads_are_serialized(monkeypatch):
     ]
     with ThreadPoolExecutor(max_workers=3) as executor:
         contexts = list(
-            executor.map(lambda builder: builder._load_context(), builders)
+            executor.map(
+                lambda builder: builder._load_graph_contexts(), builders
+            )
         )
 
     assert len(contexts) == 3
     assert max_active_calls == 1
+
+
+def test_etrecord_builds_all_generated_graphs(monkeypatch, tmp_path):
+    etrecord_path = tmp_path / "multi_graph.etrecord"
+    etrecord_path.write_bytes(b"synthetic etrecord")
+    exported_program = _empty_exported_program()
+    etrecord = SimpleNamespace(
+        edge_dialect_program={
+            "forward": exported_program,
+            "encode": exported_program,
+        },
+        graph_map={},
+    )
+    operator_graphs = {
+        builder_module.EDGE_DIALECT_GRAPH_KEY: _synthetic_edge_graph(
+            "aten_relu_default_"
+        ),
+        "edge_dialect_exported_program/encode": _synthetic_edge_graph(
+            "aten_sigmoid_default_"
+        ),
+    }
+
+    monkeypatch.setattr(builder_module, "parse_etrecord", lambda _: etrecord)
+    monkeypatch.setattr(
+        builder_module.ETRecordGraphBuilder,
+        "_gen_operator_graphs",
+        staticmethod(lambda _: operator_graphs),
+    )
+    monkeypatch.setattr(
+        builder_module.ETRecordDelegateBuilder,
+        "build",
+        lambda _: DelegateGrouping(
+            namespace_by_handle={},
+            group_attributes={},
+        ),
+    )
+
+    collection = asdict(
+        ETRecordGraphBuilder(etrecord_path, settings={}).build()[0]
+    )
+
+    assert collection["label"] == "multi_graph.etrecord"
+    assert [graph["id"] for graph in collection["graphs"]] == [
+        "forward",
+        "encode",
+    ]
+    assert [
+        _node_by_id(graph, graph_node_id)["id"]
+        for graph, graph_node_id in zip(
+            collection["graphs"],
+            ["aten_relu_default_", "aten_sigmoid_default_"],
+            strict=True,
+        )
+    ] == ["aten_relu_default_", "aten_sigmoid_default_"]
+
+
+def _empty_exported_program() -> SimpleNamespace:
+    return SimpleNamespace(
+        graph=SimpleNamespace(nodes=[]),
+        graph_signature=SimpleNamespace(
+            inputs_to_parameters={},
+            inputs_to_buffers={},
+            inputs_to_lifted_tensor_constants={},
+        ),
+        state_dict={},
+    )
+
+
+def _synthetic_edge_graph(operator_name: str) -> OperatorGraph:
+    input_value = ValueNode(
+        name=f"{operator_name}_input",
+        output_shapes=[[1]],
+        dtype="torch.float32",
+    )
+    operator = OperatorNode(
+        name=operator_name,
+        op=operator_name.removesuffix("_").replace("_", "."),
+        inputs=[input_value],
+        output_shapes=[[1]],
+        metadata={"debug_handle": 1},
+    )
+    output_value = ValueNode(
+        name=f"{operator_name}_output",
+        inputs=[operator],
+        output_shapes=[[1]],
+    )
+    return OperatorGraph(
+        graph_name="base",
+        elements=[
+            OperatorGraph(graph_name="inputs", elements=[input_value]),
+            OperatorGraph(graph_name="forward", elements=[operator]),
+            OperatorGraph(graph_name="outputs", elements=[output_value]),
+        ],
+    )
 
 
 def test_etrecord_connections_preserve_original_input_indices():

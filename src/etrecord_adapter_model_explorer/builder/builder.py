@@ -1,11 +1,12 @@
 # SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 
+from collections.abc import Mapping
+from copy import copy
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
 from typing import Any, Dict
-from zipfile import ZipFile
 
 from executorch.devtools.debug_format.base_schema import (
     Node,
@@ -54,82 +55,198 @@ class ETRecordGraphBuilder:
         self.model_name = self.source_path.name
 
     def build(self) -> list[gb.GraphCollection]:
-        edge_graph, context = self._load_context()
-        graph = self._build_model_explorer_graph(
-            self.source_path,
-            edge_graph,
-            context,
+        etrecord, operator_graphs, _edge_program_key = (
+            self._load_graph_contexts()
         )
-        return [gb.GraphCollection(label=self.model_name, graphs=[graph])]
+        delegate_grouping = ETRecordDelegateBuilder(etrecord).build()
+        graphs = [
+            self._build_model_explorer_graph(
+                self.source_path,
+                operator_graph,
+                self._build_context(
+                    self._find_exported_program(etrecord, graph_key),
+                    delegate_grouping=(
+                        delegate_grouping
+                        if self._graph_uses_delegate_handles(
+                            operator_graph,
+                            delegate_grouping.namespace_by_handle,
+                        )
+                        else None
+                    ),
+                ),
+                graph_id=graph_key,
+            )
+            for graph_key, operator_graph in operator_graphs.items()
+        ]
+        return [gb.GraphCollection(label=self.model_name, graphs=graphs)]
 
     @property
     def graph_collections(self) -> list[gb.GraphCollection]:
         return self.build()
 
-    def _load_context(self) -> tuple[OperatorGraph, BuildContext]:
+    def _load_graph_contexts(
+        self,
+    ) -> tuple[object, Mapping[str, OperatorGraph], str]:
         # ExecuTorch deserialization uses process-global state guarded by an
         # assertion, so concurrent Model Explorer loads can trip it.
         with _ETRECORD_LOAD_LOCK:
             etrecord = parse_etrecord(str(self.source_path))
-            edge_graph = gen_graphs_from_etrecord(etrecord)[
-                EDGE_DIALECT_GRAPH_KEY
-            ]
-        edge_dialect_program = etrecord.edge_dialect_program
-        if edge_dialect_program is None:
-            zip_entries: list[str] = []
-            try:
-                with ZipFile(self.source_path, "r") as etrecord_zip:
-                    zip_entries = etrecord_zip.namelist()
-            except Exception as exc:
-                zip_entries = [f"<failed to read zip entries: {exc}>"]
-
-            print("DEBUG ETRECORD LOAD FAILURE")
-            print(f"source_path={self.source_path}")
-            print(f"etrecord_type={type(etrecord)}")
-            print(
-                "edge_dialect_program="
-                f"{getattr(etrecord, 'edge_dialect_program', None)!r}"
-            )
-            print(
-                f"exported_program={getattr(etrecord, 'exported_program', None)!r}"
-            )
-            print(
-                "graph_map_keys="
-                f"{list((getattr(etrecord, 'graph_map', {}) or {}).keys())}"
-            )
-            print(
-                "debug_handle_map_type="
-                f"{type(getattr(etrecord, '_debug_handle_map', None))}"
-            )
-            print(
-                f"delegate_map_type={type(getattr(etrecord, '_delegate_map', None))}"
-            )
-            print(f"zip_entries={zip_entries}")
+            operator_graphs = self._gen_operator_graphs(etrecord)
+        if not operator_graphs:
             raise ValueError(
-                "This ETRecord does not contain an edge dialect program."
+                "This ETRecord does not contain any graph artifacts."
             )
+
+        edge_program_key = self._find_edge_program_key(operator_graphs)
+        if edge_program_key is None:
+            raise ValueError(
+                "This ETRecord contains graph artifacts, but none were "
+                "identified as an edge dialect graph."
+            )
+
+        if self._find_exported_program(etrecord, edge_program_key) is None:
+            raise ValueError(
+                "This ETRecord contains an edge dialect graph, but the matching "
+                "edge dialect exported program could not be found."
+            )
+
+        return etrecord, operator_graphs, edge_program_key
+
+    @staticmethod
+    def _gen_operator_graphs(etrecord) -> Mapping[str, OperatorGraph]:
+        edge_dialect_program = etrecord.edge_dialect_program
+        if not isinstance(edge_dialect_program, dict):
+            return gen_graphs_from_etrecord(etrecord)
+
+        # ExecuTorch can parse multi-method ETRecords as a dict of exported
+        # programs, but gen_graphs_from_etrecord still assumes a single program
+        # and accesses edge_dialect_program.graph_module. Feed the upstream
+        # helper single-method ETRecord views until it handles this shape.
+        graph_map_etrecord = copy(etrecord)
+        graph_map_etrecord.edge_dialect_program = None
+        graph_map_operator_graphs = gen_graphs_from_etrecord(
+            graph_map_etrecord
+        )
+        operator_graphs = {
+            key: graph_map_operator_graphs[key]
+            for key in sorted(graph_map_operator_graphs)
+        }
+
+        for method_name, exported_program in sorted(
+            edge_dialect_program.items(),
+            key=lambda item: (item[0] != "forward", item[0]),
+        ):
+            method_etrecord = copy(etrecord)
+            method_etrecord.graph_map = None
+            method_etrecord.edge_dialect_program = exported_program
+            method_graphs = gen_graphs_from_etrecord(method_etrecord)
+
+            graph_key = (
+                EDGE_DIALECT_GRAPH_KEY
+                if method_name == "forward"
+                else f"edge_dialect_exported_program/{method_name}"
+            )
+            operator_graphs[graph_key] = method_graphs[EDGE_DIALECT_GRAPH_KEY]
+
+        return operator_graphs
+
+    @staticmethod
+    def _find_edge_program_key(
+        operator_graphs: Mapping[str, OperatorGraph],
+    ) -> str | None:
+        if EDGE_DIALECT_GRAPH_KEY in operator_graphs:
+            return EDGE_DIALECT_GRAPH_KEY
+
+        for graph_key in operator_graphs:
+            if graph_key.startswith("edge_dialect_exported_program"):
+                return graph_key
+        return None
+
+    @staticmethod
+    def _find_exported_program(etrecord, graph_key: str):
+        if graph_key == "exported_program":
+            return etrecord.exported_program
+
+        edge_dialect_program = etrecord.edge_dialect_program
         if isinstance(edge_dialect_program, dict):
-            edge_dialect_program = edge_dialect_program["forward"]
-        graph_signature = edge_dialect_program.graph_signature
-        delegate_grouping = ETRecordDelegateBuilder(etrecord).build()
-        return (
-            edge_graph,
-            BuildContext(
-                delegate_namespace_by_handle=(
-                    delegate_grouping.namespace_by_handle
-                ),
-                delegate_group_attributes=delegate_grouping.group_attributes,
-                parameter_state_dict=dict(edge_dialect_program.state_dict),
-                placeholder_to_state_name={
-                    **graph_signature.inputs_to_parameters,
-                    **graph_signature.inputs_to_buffers,
-                    **graph_signature.inputs_to_lifted_tensor_constants,
-                },
-                named_arg_values_by_node=self._extract_named_arg_values(
-                    edge_dialect_program
-                ),
+            method_name = ETRecordGraphBuilder._edge_method_name(graph_key)
+            if method_name in edge_dialect_program:
+                return edge_dialect_program[method_name]
+        elif edge_dialect_program is not None and (
+            graph_key == EDGE_DIALECT_GRAPH_KEY
+            or graph_key.startswith("edge_dialect_exported_program")
+        ):
+            return edge_dialect_program
+
+        graph_map = etrecord.graph_map or {}
+        if graph_key in graph_map:
+            return graph_map[graph_key]
+
+        if graph_key == EDGE_DIALECT_GRAPH_KEY:
+            return graph_map.get("edge_dialect_exported_program")
+
+        return None
+
+    @staticmethod
+    def _edge_method_name(graph_key: str) -> str:
+        if graph_key.startswith("edge_dialect_exported_program/"):
+            return graph_key.removeprefix("edge_dialect_exported_program/")
+        return "forward"
+
+    def _build_context(
+        self,
+        exported_program,
+        *,
+        delegate_grouping,
+    ) -> BuildContext:
+        if exported_program is None:
+            return BuildContext({}, {}, {}, {}, {})
+
+        graph_signature = exported_program.graph_signature
+        return BuildContext(
+            delegate_namespace_by_handle=(
+                delegate_grouping.namespace_by_handle
+                if delegate_grouping is not None
+                else {}
+            ),
+            delegate_group_attributes=(
+                delegate_grouping.group_attributes
+                if delegate_grouping is not None
+                else {}
+            ),
+            parameter_state_dict=dict(exported_program.state_dict),
+            placeholder_to_state_name={
+                **graph_signature.inputs_to_parameters,
+                **graph_signature.inputs_to_buffers,
+                **graph_signature.inputs_to_lifted_tensor_constants,
+            },
+            named_arg_values_by_node=self._extract_named_arg_values(
+                exported_program
             ),
         )
+
+    @classmethod
+    def _graph_uses_delegate_handles(
+        cls,
+        operator_graph: OperatorGraph,
+        namespace_by_handle: Mapping[int, str],
+    ) -> bool:
+        if not namespace_by_handle:
+            return False
+
+        forward_graph = cls._find_subgraph(operator_graph, "forward")
+        if forward_graph is None:
+            return False
+
+        for element in forward_graph.elements:
+            if not isinstance(element, OperatorNode):
+                continue
+            debug_handle = ETRecordDelegateBuilder.node_debug_handle(
+                element.metadata or {}
+            )
+            if debug_handle in namespace_by_handle:
+                return True
+        return False
 
     @classmethod
     def _build_model_explorer_graph(
@@ -137,6 +254,7 @@ class ETRecordGraphBuilder:
         source_path: Path,
         edge_graph: OperatorGraph,
         context: BuildContext,
+        graph_id: str = "forward",
     ) -> gb.Graph:
         inputs_graph = cls._find_subgraph(edge_graph, "inputs")
         forward_graph = cls._find_subgraph(edge_graph, "forward")
@@ -170,12 +288,13 @@ class ETRecordGraphBuilder:
         )
 
         return gb.Graph(
-            id="forward",
+            id=cls._model_explorer_graph_id(graph_id),
             nodes=nodes,
             groupNodeAttributes={
                 "": {
                     "Adapter": ADAPTER_NAME,
                     "ETRecord Path": str(source_path),
+                    "ETRecord Graph": graph_id,
                 },
                 **context.delegate_group_attributes,
             },
@@ -474,6 +593,14 @@ class ETRecordGraphBuilder:
             )
 
         return source_path
+
+    @staticmethod
+    def _model_explorer_graph_id(graph_key: str) -> str:
+        if graph_key == EDGE_DIALECT_GRAPH_KEY:
+            return "forward"
+        if graph_key.startswith("edge_dialect_exported_program/"):
+            return graph_key.removeprefix("edge_dialect_exported_program/")
+        return graph_key
 
     @staticmethod
     def _find_subgraph(
