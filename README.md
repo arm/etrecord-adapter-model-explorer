@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # ETRecord Adapter for Model Explorer
 
 `etrecord-adapter-model-explorer` is the standalone Model Explorer adapter
-for ExecuTorch `.etrecord` files.
+for ExecuTorch ETRecord files using the `.etrecord` or `.bin` extension.
 
 This repository contains the ETRecord-specific adapter code, tests, and
 fixtures. For a combined install that wires the PTE adapter, ETRecord adapter,
@@ -32,7 +32,7 @@ Run Model Explorer with the standalone ETRecord adapter enabled:
 model-explorer --extensions=etrecord_adapter_model_explorer
 ```
 
-Then open an `.etrecord` file.
+Then open an ETRecord stored as an `.etrecord` or `.bin` file.
 
 ## Delegate visibility
 

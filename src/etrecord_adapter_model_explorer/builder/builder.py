@@ -587,9 +587,10 @@ class ETRecordGraphBuilder:
                 f"Source file {source_path} does not exist."
             )
 
-        if source_path.suffix.lower() != ".etrecord":
+        if source_path.suffix.lower() not in {".etrecord", ".bin"}:
             raise ValueError(
-                f"Unsupported file type {source_path.suffix!r}. Expected .etrecord."
+                f"Unsupported file type {source_path.suffix!r}. "
+                "Expected .etrecord or .bin."
             )
 
         return source_path

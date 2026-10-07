@@ -174,6 +174,18 @@ def test_etrecord_copy_builds_without_external_files(tmp_path):
     assert conv1["style"] is None
 
 
+def test_bin_etrecord_copy_builds_without_external_files(tmp_path):
+    """An ETRecord using the .bin filename convention is accepted."""
+    etrecord_path = tmp_path / "simple_convnet.bin"
+    etrecord_path.write_bytes((FIXTURES_ROOT / "input.etrecord").read_bytes())
+
+    graph = asdict(
+        ETRecordGraphBuilder(etrecord_path, settings={}).build()[0].graphs[0]
+    )
+
+    assert graph["id"] == "forward"
+
+
 def test_concurrent_etrecord_loads_are_serialized(monkeypatch):
     active_calls = 0
     max_active_calls = 0
@@ -822,5 +834,5 @@ def test_etrecord_file_not_found(tmp_path):
 def test_etdp_input_is_rejected(tmp_path):
     invalid_path = tmp_path / "invalid.etdp"
     invalid_path.write_bytes(b"not an etrecord")
-    with pytest.raises(ValueError, match=r"Expected \.etrecord"):
+    with pytest.raises(ValueError, match=r"Expected \.etrecord or \.bin"):
         ETRecordGraphBuilder(invalid_path, settings={})

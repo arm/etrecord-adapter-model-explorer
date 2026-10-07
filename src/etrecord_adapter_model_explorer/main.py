@@ -15,7 +15,7 @@ class ETRecordAdapter(Adapter):
         id=ADAPTER_ID,
         name=ADAPTER_NAME,
         description="ETRecord adapter for Model Explorer",
-        fileExts=["etrecord"],
+        fileExts=["etrecord", "bin"],
     )
 
     def __init__(self):
