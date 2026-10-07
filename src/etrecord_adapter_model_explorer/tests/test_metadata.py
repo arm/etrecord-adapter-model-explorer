@@ -12,10 +12,7 @@ from etrecord_adapter_model_explorer.builder.metadata import (
     build_node_attrs,
     build_output_metadata,
 )
-
-
-def _attrs_dict(items) -> dict[str, str]:
-    return {item.key: item.value for item in items}
+from etrecord_adapter_model_explorer.tests.helpers import key_value_attrs
 
 
 def test_build_node_attrs_skips_empty_metadata_values():
@@ -51,7 +48,7 @@ def test_build_node_attrs_skips_empty_metadata_values():
         },
     )
 
-    attrs = _attrs_dict(build_node_attrs(node))
+    attrs = key_value_attrs(build_node_attrs(node))
 
     assert attrs == {
         "Node Name": "aten_add_tensor_",
@@ -78,7 +75,7 @@ def test_build_node_attrs_includes_parameter_values_from_state_dict():
         metadata={"debug_handle": 1},
     )
 
-    attrs = _attrs_dict(
+    attrs = key_value_attrs(
         build_node_attrs(
             node,
             state_dict={
@@ -116,7 +113,7 @@ def test_build_node_attrs_includes_missing_named_arg_values():
         metadata={"debug_handle": 3},
     )
 
-    attrs = _attrs_dict(
+    attrs = key_value_attrs(
         build_node_attrs(
             node,
             named_arg_values={
@@ -129,6 +126,136 @@ def test_build_node_attrs_includes_missing_named_arg_values():
     assert attrs["dim"] == "[-1, -2]"
     assert attrs["keepdim"] == "True"
     assert attrs["dtype"] == "None"
+
+
+def test_build_node_attrs_ignores_omitted_self_and_input_arguments():
+    node = OperatorNode(
+        name="custom_op",
+        op="custom.op",
+        inputs=[ValueNode(name="value_", output_shapes=[[1]])],
+        named_args=["value", "self", "input", "alpha"],
+    )
+
+    attrs = key_value_attrs(
+        build_node_attrs(
+            node,
+            named_arg_values={
+                "self": "ignored",
+                "input": "ignored",
+                "alpha": 1,
+            },
+        )
+    )
+
+    assert "self" not in attrs
+    assert "input" not in attrs
+    assert attrs["alpha"] == "1"
+
+
+def test_build_node_attrs_ignores_missing_named_argument_values():
+    node = OperatorNode(
+        name="custom_op",
+        op="custom.op",
+        inputs=[ValueNode(name="value_", output_shapes=[[1]])],
+        named_args=["value", "provided", "missing"],
+    )
+
+    attrs = key_value_attrs(
+        build_node_attrs(
+            node,
+            named_arg_values={"provided": True},
+        )
+    )
+
+    assert attrs["provided"] == "True"
+    assert "missing" not in attrs
+
+
+def test_build_node_attrs_uses_derived_name_for_numbered_input():
+    """Strip generated numeric suffixes from ValueNode attribute names."""
+    node = OperatorNode(
+        name="custom_op",
+        op="custom.op",
+        inputs=[
+            ValueNode(
+                name="value_0",  # _0 will be stripped
+                output_shapes=[[1]],
+                dtype="torch.float32",
+            ),
+        ],
+        named_args=["other"],  # derived "value" name will take precedence
+    )
+
+    attrs = key_value_attrs(build_node_attrs(node))
+
+    assert attrs["value"] == "shape=[1], dtype=torch.float32"
+
+
+def test_build_node_attrs_formats_tuple_named_argument_as_shape():
+    node = OperatorNode(
+        name="aten_convolution_default_",
+        op="aten.convolution.default",
+        inputs=[
+            ValueNode(name="input_", output_shapes=[[1, 3, 32, 32]]),
+            ValueNode(name="weight_", output_shapes=[[8, 3, 3, 3]]),
+            ValueNode(name="bias_", output_shapes=[[8]]),
+        ],
+        named_args=["input", "weight", "bias", "stride"],
+    )
+
+    attrs = key_value_attrs(
+        build_node_attrs(
+            node,
+            named_arg_values={"stride": (1, 1)},
+        )
+    )
+
+    assert attrs["stride"] == "[1, 1]"
+
+
+def test_build_node_attrs_uses_schema_name_for_generic_input():
+    """Use the schema-derived argument name for a generic ValueNode."""
+    node = OperatorNode(
+        name="aten_add_tensor_",
+        op="aten.add.Tensor",
+        inputs=[
+            ValueNode(
+                name="value",
+                output_shapes=[[1]],
+                dtype="torch.float32",
+            ),
+        ],
+        named_args=["other"],
+    )
+
+    attrs = key_value_attrs(build_node_attrs(node))
+
+    assert attrs["other"] == "shape=[1], dtype=torch.float32"
+
+
+def test_build_node_attrs_omits_output_shapes_when_absent():
+    node = OperatorNode(
+        name="custom_op",
+        op="custom.op",
+        output_shapes=None,
+    )
+
+    attrs = key_value_attrs(build_node_attrs(node))
+
+    assert "Output Shapes" not in attrs
+
+
+def test_build_node_attrs_omits_input_without_displayable_metadata():
+    node = OperatorNode(
+        name="custom_op_",
+        op="custom.op",
+        inputs=[ValueNode(name="unknown_value_")],
+        named_args=["value"],
+    )
+
+    attrs = key_value_attrs(build_node_attrs(node))
+
+    assert "value" not in attrs
 
 
 def test_build_input_metadata_includes_shapes_constants_and_debug_handles():
@@ -152,20 +279,20 @@ def test_build_input_metadata_includes_shapes_constants_and_debug_handles():
     )
 
     assert len(metadata_items) == 3
-    assert _attrs_dict(metadata_items[0].attrs) == {
+    assert key_value_attrs(metadata_items[0].attrs) == {
         "Source Node": "aten_relu_default_",
         "Arg Name": "self",
         "Shape": "[2, 3]",
         "Debug Handle": "11",
     }
-    assert _attrs_dict(metadata_items[1].attrs) == {
+    assert key_value_attrs(metadata_items[1].attrs) == {
         "Source Node": "weight_",
         "Arg Name": "weight",
         "Shape": "[3, 4]",
         "DType": "torch.float32",
         "Debug Handle": "12",
     }
-    assert _attrs_dict(metadata_items[2].attrs) == {
+    assert key_value_attrs(metadata_items[2].attrs) == {
         "Source Node": "dims_",
         "Const Value": "[1, 0]",
     }
@@ -182,7 +309,7 @@ def test_build_output_metadata_omits_optional_attrs_when_absent():
 
     assert len(metadata_items) == 1
     assert metadata_items[0].id == "0"
-    assert _attrs_dict(metadata_items[0].attrs) == {
+    assert key_value_attrs(metadata_items[0].attrs) == {
         "Shape": "[4, 5]",
     }
 
@@ -199,8 +326,18 @@ def test_build_output_metadata_includes_dtype_and_debug_handle_when_present():
 
     assert len(metadata_items) == 1
     assert metadata_items[0].id == "x_"
-    assert _attrs_dict(metadata_items[0].attrs) == {
+    assert key_value_attrs(metadata_items[0].attrs) == {
         "Shape": "[1, 3, 32, 32]",
         "DType": "torch.float32",
         "Debug Handle": "7",
     }
+
+
+def test_build_output_metadata_omits_items_without_shapes():
+    node = OperatorNode(
+        name="custom_op",
+        op="custom.op",
+        output_shapes=None,
+    )
+
+    assert build_output_metadata(node) == []

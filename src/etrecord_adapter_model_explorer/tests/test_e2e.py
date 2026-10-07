@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 
+import warnings
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from pathlib import Path
@@ -17,14 +19,16 @@ from executorch.devtools.debug_format.base_schema import (
 
 from etrecord_adapter_model_explorer.builder import builder as builder_module
 from etrecord_adapter_model_explorer.builder.builder import (
-    BuildContext,
     ETRecordGraphBuilder,
 )
 from etrecord_adapter_model_explorer.builder.delegate import DelegateGrouping
+from etrecord_adapter_model_explorer.tests.helpers import empty_build_context
 
 TEST_FIXTURES_ROOT = Path(__file__).resolve().parent / "fixtures"
 FIXTURES_ROOT = TEST_FIXTURES_ROOT / "simple_convnet"
 MULTI_INPUT_FIXTURES_ROOT = TEST_FIXTURES_ROOT / "multi_input"
+CORE_ML_FIXTURES_ROOT = TEST_FIXTURES_ROOT / "mv2_core_ml"
+EDGE_CASE_FIXTURES_ROOT = TEST_FIXTURES_ROOT / "edge_case_tensors"
 
 
 def _node_by_id(graph_dict: dict, node_id: str) -> dict:
@@ -46,16 +50,6 @@ def _metadata_attrs(
             return {attr["key"]: attr["value"] for attr in item["attrs"]}
     raise AssertionError(
         f"Metadata item {item_id!r} was not found in {metadata_key!r}."
-    )
-
-
-def _empty_build_context() -> BuildContext:
-    return BuildContext(
-        delegate_namespace_by_handle={},
-        delegate_group_attributes={},
-        parameter_state_dict={},
-        placeholder_to_state_name={},
-        named_arg_values_by_node={},
     )
 
 
@@ -527,6 +521,196 @@ def test_multi_input_etrecord_builds_expected_branching_graph():
     ]
 
 
+@pytest.fixture(scope="module")
+def edge_case_tensor_graph():
+    builder = ETRecordGraphBuilder(
+        EDGE_CASE_FIXTURES_ROOT / "edge_case_tensors.etrecord", settings={}
+    )
+    return asdict(builder.build()[0].graphs[0])
+
+
+@pytest.mark.parametrize(
+    ("node_id", "attribute_name", "expected_value"),
+    [
+        (
+            "dim_order_ops__clone_dim_order_default_",
+            "empty_tensor",
+            "shape=[0, 3], dtype=torch.float32, "
+            "values=tensor([], size=(0, 3))",
+        ),
+        (
+            "dim_order_ops__clone_dim_order_default_1_",
+            "boolean_tensor",
+            "shape=[2], dtype=torch.bool, values=[True, False]",
+        ),
+        (
+            "dim_order_ops__clone_dim_order_default_2_",
+            "complex_tensor",
+            "shape=[1], dtype=torch.complex64, values=[(1+2j)]",
+        ),
+    ],
+)
+def test_edge_case_tensor_etrecord_renders_state_dict_value(
+    edge_case_tensor_graph,
+    node_id,
+    attribute_name,
+    expected_value,
+):
+    assert (
+        _attrs_dict(_node_by_id(edge_case_tensor_graph, node_id))[
+            attribute_name
+        ]
+        == expected_value
+    )
+
+
+def test_edge_case_tensor_etrecord_constructs_all_outputs(
+    edge_case_tensor_graph,
+):
+    graph = edge_case_tensor_graph
+    assert {
+        node["id"]
+        for node in graph["nodes"]
+        if node["id"].startswith("dim_order_ops__clone_dim_order_default")
+    } == {
+        "dim_order_ops__clone_dim_order_default_",
+        "dim_order_ops__clone_dim_order_default_1_",
+        "dim_order_ops__clone_dim_order_default_2_",
+    }
+    assert (
+        len(_node_by_id(graph, "GraphOutputs")["incomingEdges"]) == 4
+    )  # x_ input passthrough, 3 clone outputs
+
+
+@pytest.mark.parametrize(
+    ("node_id", "expected_attrs"),
+    [
+        (
+            "dim_order_ops__clone_dim_order_default_",
+            {"Shape": "[0, 3]", "Debug Handle": "0"},
+        ),
+        (
+            "dim_order_ops__clone_dim_order_default_1_",
+            {"Shape": "[2]", "Debug Handle": "1"},
+        ),
+        (
+            "dim_order_ops__clone_dim_order_default_2_",
+            {"Shape": "[1]", "Debug Handle": "2"},
+        ),
+    ],
+)
+def test_edge_case_tensor_etrecord_preserves_operator_output_metadata(
+    edge_case_tensor_graph,
+    node_id,
+    expected_attrs,
+):
+    operator = _node_by_id(edge_case_tensor_graph, node_id)
+    assert operator["outputsMetadata"] == [
+        {
+            "id": "0",
+            "attrs": [
+                {"key": key, "value": value}
+                for key, value in expected_attrs.items()
+            ],
+        }
+    ]
+
+
+def test_core_ml_etrecord_builds_multi_output_delegate_graph():
+    # Core ML MobileNetV2 emits expected parser warnings for unsupported
+    # hardtanh (min_val/max_val) and mean (keepdim) kwargs
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            category=UserWarning,
+            message=(
+                r"Unsupported kwarg encountered: "
+                r"aten_(?:hardtanh_default(?:_\d+)?|mean_dim), .*"
+            ),
+        )
+        builder = ETRecordGraphBuilder(
+            CORE_ML_FIXTURES_ROOT / "mv2_core_ml.etrecord", settings={}
+        )
+        graph = asdict(builder.build()[0].graphs[0])
+
+    graph_inputs = _node_by_id(graph, "GraphInputs")
+    graph_outputs = _node_by_id(graph, "GraphOutputs")
+    assert len(graph_inputs["outputsMetadata"]) == 1
+    assert len(graph_outputs["inputsMetadata"]) == 1
+    assert len(graph_outputs["incomingEdges"]) == 1
+
+    batch_norm = _node_by_id(
+        graph,
+        "aten__native_batch_norm_legit_no_training_default_",
+    )
+    assert batch_norm["namespace"] == "delegates/CoreMLBackend/partition_0"
+    assert [item["id"] for item in batch_norm["outputsMetadata"]] == [
+        "0:0",
+        "0:1",
+        "0:2",
+    ]
+    assert [item["attrs"][0] for item in batch_norm["outputsMetadata"]] == [
+        {"key": "Shape", "value": "[1, 32, 112, 112]"},
+        {"key": "Shape", "value": "[0]"},
+        {"key": "Shape", "value": "[0]"},
+    ]
+
+    delegate_namespace = "delegates/CoreMLBackend/partition_0"
+    delegate_attrs = graph["groupNodeAttributes"][delegate_namespace]
+    assert delegate_attrs["Backend"] == "CoreMLBackend"
+    assert delegate_attrs["Instruction Id"] == "0"
+    assert delegate_attrs["Method"] == "forward"
+    handles = [
+        int(handle) for handle in delegate_attrs["Debug Handles"].split(", ")
+    ]
+
+    # The fixture's delegate summary contains debug handles 1 through 153
+    assert handles == list(range(1, 154))
+
+    delegated_nodes = [
+        node
+        for node in graph["nodes"]
+        if node["namespace"] == delegate_namespace
+    ]
+
+    delegated_handles = {
+        int(_attrs_dict(node)["debug_handle"]) for node in delegated_nodes
+    }
+    assert delegated_handles == set(handles)
+
+    node_handle_counts = Counter(
+        int(_attrs_dict(node)["debug_handle"]) for node in delegated_nodes
+    )
+
+    # Two graph nodes share handle 153
+    expected_handle_counts = Counter(handles)
+    expected_handle_counts[153] += 1
+    assert node_handle_counts == expected_handle_counts
+
+    assert (
+        _attrs_dict(_node_by_id(graph, "aten_permute_copy_default_"))[
+            "debug_handle"
+        ]
+        == "153"
+    )
+    assert (
+        _attrs_dict(_node_by_id(graph, "aten_addmm_default_"))["debug_handle"]
+        == "153"
+    )
+
+    assert all(
+        node["namespace"] == delegate_namespace for node in delegated_nodes
+    )
+
+    assert len(delegated_nodes) == 154
+    assert graph["groupNodeConfigs"] == [
+        {
+            "namespaceRegex": r"delegates(/.*)?",
+            "layoutDirection": 0,  # Model Explorer: 0 means top-to-bottom
+        }
+    ]
+
+
 def test_graph_outputs_support_multiple_operator_outputs_and_passthrough_values():
     input_value = ValueNode(
         name="x_",
@@ -573,7 +757,7 @@ def test_graph_outputs_support_multiple_operator_outputs_and_passthrough_values(
         ETRecordGraphBuilder._build_model_explorer_graph(
             Path("synthetic.etrecord"),
             edge_graph,
-            _empty_build_context(),
+            empty_build_context(),
         )
     )
     split = _node_by_id(graph, "aten_split_copy_tensor_")
@@ -627,6 +811,12 @@ def test_graph_outputs_support_multiple_operator_outputs_and_passthrough_values(
             ],
         },
     ]
+
+
+def test_etrecord_file_not_found(tmp_path):
+    missing_path = tmp_path / "missing.etrecord"
+    with pytest.raises(FileNotFoundError, match="does not exist"):
+        ETRecordGraphBuilder(source_path=missing_path, settings={})
 
 
 def test_etdp_input_is_rejected(tmp_path):

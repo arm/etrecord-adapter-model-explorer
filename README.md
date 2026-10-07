@@ -80,6 +80,17 @@ limited.
 
 ## Development
 
+Install the development dependencies with pip 25.1 or newer:
+
+```bash
+python -m pip install -e . --group dev \
+  --find-links https://download.pytorch.org/whl/cpu/torch/
+```
+
+The dev group selects CPU-only PyTorch wheels on Linux and Windows, and the
+regular macOS wheel. The `--find-links` option supplies PyTorch's wheel
+location alongside your configured package index.
+
 Local ETRecord test fixtures live under
 `src/etrecord_adapter_model_explorer/tests/fixtures/`.
 

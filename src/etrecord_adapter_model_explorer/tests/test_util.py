@@ -64,3 +64,12 @@ def test_format_op_label_strips_overload_suffixes():
     assert format_op_label("aten.view_copy.default") == "aten::view_copy"
     assert format_op_label("aten.add.Tensor") == "aten::add"
     assert format_op_label("aten::sigmoid.default") == "aten::sigmoid"
+
+
+def test_format_op_label_handles_fallback_inputs():
+    # Labels without a namespace are unchanged
+    assert format_op_label("custom_op") == "custom_op"
+
+    # Missing or malformed labels are handled safely for display
+    assert format_op_label(None) == ""
+    assert format_op_label("::relu.default") == "::relu.default"

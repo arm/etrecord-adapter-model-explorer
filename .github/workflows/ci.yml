@@ -38,7 +38,7 @@ jobs:
         env:
           PIP_INDEX_URL: ${{ secrets.INTERNAL_PYPI_AUTH_INDEX_URL }}
         run: |
-          python -m pip install . --group dev
+          python -m pip install . --group dev --find-links https://download.pytorch.org/whl/cpu/torch/
 
       - name: Lint and Format Check
         run: |
@@ -58,7 +58,7 @@ jobs:
           MATRIX_PYTHON_VERSION: ${{ matrix.python-version }}
           DEFAULT_PY_VERSION: ${{ env.DEFAULT_PY_VERSION }}
         run: |
-          python -m pip install . --group dev
+          python -m pip install . --group dev --find-links https://download.pytorch.org/whl/cpu/torch/
 
           PYTEST_CVG_FLAGS=""
           if [[ "$MATRIX_RUNNER" == "$LINUX_RUNNER" && \

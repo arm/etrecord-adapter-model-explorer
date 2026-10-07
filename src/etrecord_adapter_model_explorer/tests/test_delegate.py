@@ -114,3 +114,27 @@ def test_delegate_builder_uses_debug_handle_map_when_delegate_map_is_empty():
             "Debug Handles": "101, 102",
         }
     }
+
+
+def test_delegate_builder_ignores_malformed_debug_handle_map():
+    etrecord = SimpleNamespace(
+        _debug_handle_map={
+            "forward": ["not", "a", "dict"],
+        },
+        _delegate_map={
+            "forward": {
+                9000: {
+                    "name": "TestBackend",
+                    "delegate_map": {
+                        "delegate_0": [101],
+                    },
+                },
+            },
+        },
+    )
+
+    grouping = ETRecordDelegateBuilder(etrecord).build()
+
+    assert grouping.namespace_by_handle == {
+        101: "delegates/TestBackend/partition_9000",
+    }
