@@ -1,11 +1,14 @@
 # SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 
+import unittest
 from types import SimpleNamespace
 
 from etrecord_adapter_model_explorer.builder.delegate import (
     ETRecordDelegateBuilder,
 )
+
+_ASSERT = unittest.TestCase()
 
 
 def test_collect_partition_handles_deduplicates_and_filters_invalid_values():
@@ -19,18 +22,17 @@ def test_collect_partition_handles_deduplicates_and_filters_invalid_values():
         },
     )
 
-    assert handles == [100, 101, 102, 103, 104]
+    _ASSERT.assertEqual(handles, [100, 101, 102, 103, 104])
 
 
 def test_node_debug_handle_parses_valid_and_invalid_values():
-    assert (
-        ETRecordDelegateBuilder.node_debug_handle({"debug_handle": "7"}) == 7
+    _ASSERT.assertEqual(
+        ETRecordDelegateBuilder.node_debug_handle({"debug_handle": "7"}), 7
     )
-    assert (
+    _ASSERT.assertIsNone(
         ETRecordDelegateBuilder.node_debug_handle({"debug_handle": "bad"})
-        is None
     )
-    assert ETRecordDelegateBuilder.node_debug_handle({}) is None
+    _ASSERT.assertIsNone(ETRecordDelegateBuilder.node_debug_handle({}))
 
 
 def test_delegate_builder_formats_namespaces_and_skips_invalid_entries():
@@ -62,25 +64,31 @@ def test_delegate_builder_formats_namespaces_and_skips_invalid_entries():
 
     grouping = ETRecordDelegateBuilder(etrecord).build()
 
-    assert grouping.namespace_by_handle == {
-        101: "delegates/TestBackend/partition_9000",
-        102: "delegates/TestBackend/partition_9000",
-        201: "delegates/Delegate/partition_9001",
-    }
-    assert grouping.group_attributes == {
-        "delegates/TestBackend/partition_9000": {
-            "Backend": "TestBackend",
-            "Instruction Id": "9000",
-            "Method": "forward",
-            "Debug Handles": "101, 102",
+    _ASSERT.assertEqual(
+        grouping.namespace_by_handle,
+        {
+            101: "delegates/TestBackend/partition_9000",
+            102: "delegates/TestBackend/partition_9000",
+            201: "delegates/Delegate/partition_9001",
         },
-        "delegates/Delegate/partition_9001": {
-            "Backend": "Delegate",
-            "Instruction Id": "9001",
-            "Method": "forward",
-            "Debug Handles": "201",
+    )
+    _ASSERT.assertEqual(
+        grouping.group_attributes,
+        {
+            "delegates/TestBackend/partition_9000": {
+                "Backend": "TestBackend",
+                "Instruction Id": "9000",
+                "Method": "forward",
+                "Debug Handles": "101, 102",
+            },
+            "delegates/Delegate/partition_9001": {
+                "Backend": "Delegate",
+                "Instruction Id": "9001",
+                "Method": "forward",
+                "Debug Handles": "201",
+            },
         },
-    }
+    )
 
 
 def test_delegate_builder_uses_debug_handle_map_when_delegate_map_is_empty():
@@ -102,18 +110,24 @@ def test_delegate_builder_uses_debug_handle_map_when_delegate_map_is_empty():
 
     grouping = ETRecordDelegateBuilder(etrecord).build()
 
-    assert grouping.namespace_by_handle == {
-        101: "delegates/TestBackend/partition_9000",
-        102: "delegates/TestBackend/partition_9000",
-    }
-    assert grouping.group_attributes == {
-        "delegates/TestBackend/partition_9000": {
-            "Backend": "TestBackend",
-            "Instruction Id": "9000",
-            "Method": "forward",
-            "Debug Handles": "101, 102",
-        }
-    }
+    _ASSERT.assertEqual(
+        grouping.namespace_by_handle,
+        {
+            101: "delegates/TestBackend/partition_9000",
+            102: "delegates/TestBackend/partition_9000",
+        },
+    )
+    _ASSERT.assertEqual(
+        grouping.group_attributes,
+        {
+            "delegates/TestBackend/partition_9000": {
+                "Backend": "TestBackend",
+                "Instruction Id": "9000",
+                "Method": "forward",
+                "Debug Handles": "101, 102",
+            }
+        },
+    )
 
 
 def test_delegate_builder_ignores_malformed_debug_handle_map():
@@ -135,6 +149,7 @@ def test_delegate_builder_ignores_malformed_debug_handle_map():
 
     grouping = ETRecordDelegateBuilder(etrecord).build()
 
-    assert grouping.namespace_by_handle == {
-        101: "delegates/TestBackend/partition_9000",
-    }
+    _ASSERT.assertEqual(
+        grouping.namespace_by_handle,
+        {101: "delegates/TestBackend/partition_9000"},
+    )

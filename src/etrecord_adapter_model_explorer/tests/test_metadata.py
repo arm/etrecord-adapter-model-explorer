@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 
+import unittest
+
 import torch
 from executorch.devtools.debug_format.base_schema import (
     OperatorNode,
@@ -13,6 +15,8 @@ from etrecord_adapter_model_explorer.builder.metadata import (
     build_output_metadata,
 )
 from etrecord_adapter_model_explorer.tests.helpers import key_value_attrs
+
+_ASSERT = unittest.TestCase()
 
 
 def test_build_node_attrs_skips_empty_metadata_values():
@@ -50,15 +54,18 @@ def test_build_node_attrs_skips_empty_metadata_values():
 
     attrs = key_value_attrs(build_node_attrs(node))
 
-    assert attrs == {
-        "Node Name": "aten_add_tensor_",
-        "Op Type": "aten.add.Tensor",
-        "weight": "shape=[1, 2], dtype=torch.float32",
-        "stride": "[1, 1]",
-        "Output Shapes": "[1, 2]",
-        "debug_handle": "9",
-        "tag": "math",
-    }
+    _ASSERT.assertEqual(
+        attrs,
+        {
+            "Node Name": "aten_add_tensor_",
+            "Op Type": "aten.add.Tensor",
+            "weight": "shape=[1, 2], dtype=torch.float32",
+            "stride": "[1, 1]",
+            "Output Shapes": "[1, 2]",
+            "debug_handle": "9",
+            "tag": "math",
+        },
+    )
 
 
 def test_build_node_attrs_includes_parameter_values_from_state_dict():
@@ -91,13 +98,15 @@ def test_build_node_attrs_includes_parameter_values_from_state_dict():
         )
     )
 
-    assert attrs["weight"].startswith(
-        "shape=[1, 1, 3, 3], dtype=torch.float32, values=[0.000000, 1.000000"
+    _ASSERT.assertTrue(
+        attrs["weight"].startswith(
+            "shape=[1, 1, 3, 3], dtype=torch.float32, values=[0.000000, 1.000000"
+        )
     )
-    assert attrs["bias"] == (
-        "shape=[1], dtype=torch.float32, values=[0.500000]"
+    _ASSERT.assertEqual(
+        attrs["bias"], "shape=[1], dtype=torch.float32, values=[0.500000]"
     )
-    assert attrs["padding"] == "[1, 1]"
+    _ASSERT.assertEqual(attrs["padding"], "[1, 1]")
 
 
 def test_build_node_attrs_includes_missing_named_arg_values():
@@ -123,9 +132,9 @@ def test_build_node_attrs_includes_missing_named_arg_values():
         )
     )
 
-    assert attrs["dim"] == "[-1, -2]"
-    assert attrs["keepdim"] == "True"
-    assert attrs["dtype"] == "None"
+    _ASSERT.assertEqual(attrs["dim"], "[-1, -2]")
+    _ASSERT.assertEqual(attrs["keepdim"], "True")
+    _ASSERT.assertEqual(attrs["dtype"], "None")
 
 
 def test_build_node_attrs_ignores_omitted_self_and_input_arguments():
@@ -147,9 +156,9 @@ def test_build_node_attrs_ignores_omitted_self_and_input_arguments():
         )
     )
 
-    assert "self" not in attrs
-    assert "input" not in attrs
-    assert attrs["alpha"] == "1"
+    _ASSERT.assertNotIn("self", attrs)
+    _ASSERT.assertNotIn("input", attrs)
+    _ASSERT.assertEqual(attrs["alpha"], "1")
 
 
 def test_build_node_attrs_ignores_missing_named_argument_values():
@@ -167,8 +176,8 @@ def test_build_node_attrs_ignores_missing_named_argument_values():
         )
     )
 
-    assert attrs["provided"] == "True"
-    assert "missing" not in attrs
+    _ASSERT.assertEqual(attrs["provided"], "True")
+    _ASSERT.assertNotIn("missing", attrs)
 
 
 def test_build_node_attrs_uses_derived_name_for_numbered_input():
@@ -188,7 +197,7 @@ def test_build_node_attrs_uses_derived_name_for_numbered_input():
 
     attrs = key_value_attrs(build_node_attrs(node))
 
-    assert attrs["value"] == "shape=[1], dtype=torch.float32"
+    _ASSERT.assertEqual(attrs["value"], "shape=[1], dtype=torch.float32")
 
 
 def test_build_node_attrs_formats_tuple_named_argument_as_shape():
@@ -210,7 +219,7 @@ def test_build_node_attrs_formats_tuple_named_argument_as_shape():
         )
     )
 
-    assert attrs["stride"] == "[1, 1]"
+    _ASSERT.assertEqual(attrs["stride"], "[1, 1]")
 
 
 def test_build_node_attrs_uses_schema_name_for_generic_input():
@@ -230,7 +239,7 @@ def test_build_node_attrs_uses_schema_name_for_generic_input():
 
     attrs = key_value_attrs(build_node_attrs(node))
 
-    assert attrs["other"] == "shape=[1], dtype=torch.float32"
+    _ASSERT.assertEqual(attrs["other"], "shape=[1], dtype=torch.float32")
 
 
 def test_build_node_attrs_omits_output_shapes_when_absent():
@@ -242,7 +251,7 @@ def test_build_node_attrs_omits_output_shapes_when_absent():
 
     attrs = key_value_attrs(build_node_attrs(node))
 
-    assert "Output Shapes" not in attrs
+    _ASSERT.assertNotIn("Output Shapes", attrs)
 
 
 def test_build_node_attrs_omits_input_without_displayable_metadata():
@@ -255,7 +264,7 @@ def test_build_node_attrs_omits_input_without_displayable_metadata():
 
     attrs = key_value_attrs(build_node_attrs(node))
 
-    assert "value" not in attrs
+    _ASSERT.assertNotIn("value", attrs)
 
 
 def test_build_input_metadata_includes_shapes_constants_and_debug_handles():
@@ -278,24 +287,30 @@ def test_build_input_metadata_includes_shapes_constants_and_debug_handles():
         named_args=["self", "weight"],
     )
 
-    assert len(metadata_items) == 3
-    assert key_value_attrs(metadata_items[0].attrs) == {
-        "Source Node": "aten_relu_default_",
-        "Arg Name": "self",
-        "Shape": "[2, 3]",
-        "Debug Handle": "11",
-    }
-    assert key_value_attrs(metadata_items[1].attrs) == {
-        "Source Node": "weight_",
-        "Arg Name": "weight",
-        "Shape": "[3, 4]",
-        "DType": "torch.float32",
-        "Debug Handle": "12",
-    }
-    assert key_value_attrs(metadata_items[2].attrs) == {
-        "Source Node": "dims_",
-        "Const Value": "[1, 0]",
-    }
+    _ASSERT.assertEqual(len(metadata_items), 3)
+    _ASSERT.assertEqual(
+        key_value_attrs(metadata_items[0].attrs),
+        {
+            "Source Node": "aten_relu_default_",
+            "Arg Name": "self",
+            "Shape": "[2, 3]",
+            "Debug Handle": "11",
+        },
+    )
+    _ASSERT.assertEqual(
+        key_value_attrs(metadata_items[1].attrs),
+        {
+            "Source Node": "weight_",
+            "Arg Name": "weight",
+            "Shape": "[3, 4]",
+            "DType": "torch.float32",
+            "Debug Handle": "12",
+        },
+    )
+    _ASSERT.assertEqual(
+        key_value_attrs(metadata_items[2].attrs),
+        {"Source Node": "dims_", "Const Value": "[1, 0]"},
+    )
 
 
 def test_build_output_metadata_omits_optional_attrs_when_absent():
@@ -307,11 +322,11 @@ def test_build_output_metadata_omits_optional_attrs_when_absent():
 
     metadata_items = build_output_metadata(node)
 
-    assert len(metadata_items) == 1
-    assert metadata_items[0].id == "0"
-    assert key_value_attrs(metadata_items[0].attrs) == {
-        "Shape": "[4, 5]",
-    }
+    _ASSERT.assertEqual(len(metadata_items), 1)
+    _ASSERT.assertEqual(metadata_items[0].id, "0")
+    _ASSERT.assertEqual(
+        key_value_attrs(metadata_items[0].attrs), {"Shape": "[4, 5]"}
+    )
 
 
 def test_build_output_metadata_includes_dtype_and_debug_handle_when_present():
@@ -324,13 +339,16 @@ def test_build_output_metadata_includes_dtype_and_debug_handle_when_present():
 
     metadata_items = build_output_metadata(node, id_prefix="x_")
 
-    assert len(metadata_items) == 1
-    assert metadata_items[0].id == "x_"
-    assert key_value_attrs(metadata_items[0].attrs) == {
-        "Shape": "[1, 3, 32, 32]",
-        "DType": "torch.float32",
-        "Debug Handle": "7",
-    }
+    _ASSERT.assertEqual(len(metadata_items), 1)
+    _ASSERT.assertEqual(metadata_items[0].id, "x_")
+    _ASSERT.assertEqual(
+        key_value_attrs(metadata_items[0].attrs),
+        {
+            "Shape": "[1, 3, 32, 32]",
+            "DType": "torch.float32",
+            "Debug Handle": "7",
+        },
+    )
 
 
 def test_build_output_metadata_omits_items_without_shapes():
@@ -340,4 +358,4 @@ def test_build_output_metadata_omits_items_without_shapes():
         output_shapes=None,
     )
 
-    assert build_output_metadata(node) == []
+    _ASSERT.assertEqual(build_output_metadata(node), [])
