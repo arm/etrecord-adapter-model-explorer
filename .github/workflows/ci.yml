@@ -230,7 +230,8 @@ jobs:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && github.repository_owner != 'arm'
     needs:
       - build
-    runs-on: ${{ vars.LINUX_RUNNER }}
+    # The pinned PyPI publishing action uses an amd64 Docker image.
+    runs-on: ["${{ vars.LINUX_RUNNER }}", "X64"]
     permissions: {}
 
     steps:
