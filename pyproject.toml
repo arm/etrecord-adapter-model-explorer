@@ -10,7 +10,7 @@ name = "etrecord-adapter-model-explorer"
 version = "0.2.0"
 description = "ETRecord adapter package for Model Explorer"
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.10,<3.15"
 keywords = ["model-explorer", "executorch", "etrecord", "visualization"]
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -22,6 +22,8 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
 ]
 
 dependencies = [
@@ -35,7 +37,6 @@ dev = [
   "pytest-timeout==2.4.0",
   "ruff==0.14.2",
   "pyright==1.1.407",
-  "ai-edge-model-explorer==0.1.33",
   "torch==2.14.0+cpu; sys_platform != 'darwin'",
   "torch==2.14.0; sys_platform == 'darwin'",
 ]

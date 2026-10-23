@@ -13,6 +13,10 @@ fixtures. For a combined install that wires the PTE adapter, ETRecord adapter,
 and ETDump data provider together, use the umbrella package
 `executorch-extension-model-explorer`.
 
+## Requirements
+
+- Python >=3.10, <3.15
+
 ## Installation
 
 Install the standalone adapter package:

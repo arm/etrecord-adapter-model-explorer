@@ -809,7 +809,12 @@ def test_core_ml_etrecord_builds_multi_output_delegate_graph():
 
     _ASSERT.assertEqual(len(delegated_nodes), 154)
     _ASSERT.assertEqual(
-        graph["groupNodeConfigs"],
+        [
+            # Ignore unset optional fields for better compatibility across
+            # Model Explorer versions
+            {key: value for key, value in config.items() if value is not None}
+            for config in graph["groupNodeConfigs"]
+        ],
         [{"namespaceRegex": "delegates(/.*)?", "layoutDirection": 0}],
     )
 
