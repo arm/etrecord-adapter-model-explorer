@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+
 name: Manual Validation
 
 on:
@@ -75,7 +78,7 @@ jobs:
 
       - uses: ./.github/actions/build-wheel
         env:
-          PIP_INDEX_URL: https://pypi.org/simple
+          UV_DEFAULT_INDEX: https://pypi.org/simple
         with:
           python-version: ${{ env.DEFAULT_PY_VERSION }}
           internal-dev-version: ${{ inputs['internal-dev-version'] }}
@@ -85,12 +88,11 @@ jobs:
 
       - name: Generate wheel SBOM
         env:
-          PIP_INDEX_URL: https://pypi.org/simple
+          UV_DEFAULT_INDEX: https://pypi.org/simple
         run: |
-          python -m pip install --index-url https://pypi.org/simple cyclonedx-bom==7.3.0
-          python -m venv .sbom-venv
-          .sbom-venv/bin/python -m pip install --upgrade pip
-          .sbom-venv/bin/python -m pip install dist/*.whl
+          uv pip install --system --default-index https://pypi.org/simple cyclonedx-bom==7.3.0
+          python -m venv --clear .sbom-venv
+          uv pip install --python .sbom-venv/bin/python dist/*.whl
           python -m cyclonedx_py environment .sbom-venv/bin/python \
             --output-format JSON \
             --output-file sbom/etrecord-adapter-model-explorer-wheel.cdx.json
@@ -109,14 +111,29 @@ jobs:
 
   publish-internal-pypi:
     name: Publish wheel to internal PyPI
-    if: ${{ inputs['publish-internal-pypi'] && inputs['build-wheel'] && github.repository_owner != 'arm' }}
+    if: ${{ inputs['publish-internal-pypi'] && inputs['build-wheel'] && github.repository == 'Arm-Debug/etrecord-adapter-model-explorer' }}
     needs:
       - build-wheel
-    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LINUX_RUNNER || 'self-hosted-ubuntu-latest' }}
     environment:
       name: internal-pypi
     permissions: {}
     steps:
+      - name: Import internal credentials from Vault
+        id: vault
+        if: ${{ github.repository_owner == 'Arm-Debug' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.actor != 'dependabot[bot]' }}
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4
+        with:
+          url: ${{ secrets.VAULT_URL }}
+          method: approle
+          roleId: ${{ secrets.VAULT_ROLE_ID }}
+          secretId: ${{ secrets.VAULT_SECRET_ID }}
+          namespace: ${{ vars.VAULT_NAMESPACE }}
+          secrets: |
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} PUBLISH_PYPI_HOST | PUBLISH_PYPI_HOST ;
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} PUBLISH_PYPI_USERNAME | PUBLISH_PYPI_USERNAME ;
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} PUBLISH_PYPI_PASSWORD | PUBLISH_PYPI_PASSWORD
+
       - name: Require internal development version
         run: |
           if [[ "${{ inputs['internal-dev-version'] }}" != "true" ]]; then
@@ -130,11 +147,21 @@ jobs:
           name: dist
           path: dist/
 
+      - name: Check internal publishing configuration
+        shell: bash
+        env:
+          UPLOAD_URL: ${{ steps.vault.outputs.PUBLISH_PYPI_HOST }}
+        run: |
+          if [[ -z "$UPLOAD_URL" ]]; then
+            echo "Set PUBLISH_PYPI_HOST in Vault before publishing to Artifactory." >&2
+            exit 1
+          fi
+
       - name: Publish distribution to internal PyPI
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
-          repository-url: ${{ vars.INTERNAL_PYPI_UPLOAD_URL }}
-          user: ${{ secrets.INTERNAL_PYPI_USERNAME }}
-          password: ${{ secrets.INTERNAL_PYPI_TOKEN }}
+          repository-url: ${{ steps.vault.outputs.PUBLISH_PYPI_HOST }}
+          user: ${{ steps.vault.outputs.PUBLISH_PYPI_USERNAME }}
+          password: ${{ steps.vault.outputs.PUBLISH_PYPI_PASSWORD }}
           packages-dir: dist/
           attestations: false
