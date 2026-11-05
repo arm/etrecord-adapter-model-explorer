@@ -206,7 +206,7 @@ jobs:
     name: Request umbrella dependency update
     needs: release-internal
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && github.repository == 'Arm-Debug/etrecord-adapter-model-explorer'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.LINUX_RUNNER || 'self-hosted-ubuntu-latest' }}
     permissions: {}
     steps:
       - name: Check for a clean release tag
