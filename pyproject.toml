@@ -3,11 +3,15 @@
 
 [build-system]
 build-backend = "setuptools.build_meta"
-requires = ["setuptools>=61", "wheel"]
+requires = [
+  "setuptools>=80",
+  "setuptools-scm>=8,<10",
+  "wheel",
+]
 
 [project]
 name = "etrecord-adapter-model-explorer"
-version = "0.2.1"
+dynamic = ["version"]
 description = "ETRecord adapter package for Model Explorer"
 readme = "README.md"
 requires-python = ">=3.10,<3.15"
@@ -62,6 +66,11 @@ typeCheckingMode = "standard"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["etrecord_adapter_model_explorer*"]
+
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "node-and-date"
+fallback_version = "0.0.0.dev0"
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"

@@ -15,11 +15,6 @@ on:
         required: true
         default: true
         type: boolean
-      internal-dev-version:
-        description: "Use a unique internal development version for the built wheel."
-        required: true
-        default: true
-        type: boolean
       qlty-check:
         description: "Run Qlty checks."
         required: true
@@ -73,6 +68,7 @@ jobs:
       - name: Checkout plugin repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          fetch-depth: 0
           ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
 
@@ -81,7 +77,6 @@ jobs:
           UV_DEFAULT_INDEX: https://pypi.org/simple
         with:
           python-version: ${{ env.DEFAULT_PY_VERSION }}
-          internal-dev-version: ${{ inputs['internal-dev-version'] }}
 
       - name: Create wheel SBOM output directory
         run: mkdir -p sbom
@@ -133,13 +128,6 @@ jobs:
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} PUBLISH_PYPI_HOST | PUBLISH_PYPI_HOST ;
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} PUBLISH_PYPI_USERNAME | PUBLISH_PYPI_USERNAME ;
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} PUBLISH_PYPI_PASSWORD | PUBLISH_PYPI_PASSWORD
-
-      - name: Require internal development version
-        run: |
-          if [[ "${{ inputs['internal-dev-version'] }}" != "true" ]]; then
-            echo "Manual internal publishing requires internal-dev-version=true to avoid version collisions."
-            exit 1
-          fi
 
       - name: Download distribution artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
